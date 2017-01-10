@@ -5,6 +5,8 @@
 package RequestResponseDISMAP;
 
 
+import Authenticate.Authentication;
+import Crypto.*;
 import GestionSocket.GestionSocket;
 import GestionSocket.ISocket;
 import RequestResponse.ConsoleServeur;
@@ -15,18 +17,25 @@ import static RequestResponseDISMAP.IDISMAP.LOGOUT;
 import static RequestResponseDISMAP.IDISMAP.NO;
 import static RequestResponseDISMAP.IDISMAP.USER_INSERT_REQUEST;
 import static RequestResponseDISMAP.IDISMAP.YES;
+import UtilsCrypto.ByteArrayList;
+import UtilsCrypto.ManipFichierCrypto;
 import UtilsDISMAP.FichierConfig;
 import beans.BeanBDAccessMySQL;
 import beans.ConnectionOptions;
 import beans.DataBaseAccessFactory;
 import beans.IDataBaseAccess;
 import java.io.Serializable;
+import java.security.MessageDigest;
+import java.security.Provider;
+import java.security.Security;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Vector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JOptionPane;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 
 
@@ -180,26 +189,29 @@ public class RequestDISMAP implements IRequest, IDISMAP, Serializable{
     
     public void traiteRequeteLogin(ISocket Socket, ConsoleServeur guiApplication) throws Exception
     {   
-        // Le serveur vérifie dans la bd, le digest.
-        DataBaseAccessFactory dbaf;
-        IDataBaseAccess db;
-        ConnectionOptions options;
+    
         BeanBDAccessMySQL   beanSql;
         //Récupération des informations
         Vector vInfos = (Vector) getChargeUtile();
         
-        System.out.println("Connexion à la bd " );
         beanSql = ConnectToBd();
-        System.out.println("Recherche du password dont le login : " + vInfos.get(0).toString());
-        //String passwordHASHBD = beanSql.findPasswpordByLoginHashCode(vInfos.get(0).toString());
-        String pwdHashCSV= FichierConfig.getProperty("passHash").toString();
-        String pwdUser=vInfos.get(1).toString();
+        String login = vInfos.get(0).toString();
+        String password_DB = beanSql.findPasswpordByLogin(login);
+        System.out.println("pass DB = " + password_DB);
+       
+            
+        
+        byte[] pwdUser= (byte[])vInfos.get(1);
+        
         ResponseDISMAP rep = new ResponseDISMAP();
-        if(pwdHashCSV != null)
+        if(password_DB != null)
         {
-            System.out.println("pass CSV = " + pwdHashCSV);
-            System.out.println("pass user = " + pwdUser);
-            if (pwdHashCSV.equals(pwdUser))
+             // hash du password pour comparer avec le digest recu
+            MessageDigest messageDigest = MessageDigest.getInstance("SHA-512");
+            byte[] hashedStringDB = messageDigest.digest(password_DB.getBytes());
+            System.out.println("pass DB hash = " + hashedStringDB);
+            System.out.println("pass user hash = " + pwdUser);
+            if (MessageDigest.isEqual(pwdUser,hashedStringDB))
             {
                 
                 guiApplication.TraceEvenements("Login '" + vInfos.get(0) + "' accepté !");
@@ -333,21 +345,62 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
 
         Vector vInfos = (Vector) getChargeUtile();
      
-        Vector BuyGoods = new Vector();
-        BuyGoods.add(vInfos.get(0).toString()) ; // //numSerie
-        BuyGoods.add(vInfos.get(1).toString()) ; // //mode de paiement
+        /*************************************CHIFFRAGE DE LA REQUETE + LECTURE DE LA CLE DANS FICHIER*****************************/
+        Security.addProvider(new BouncyCastleProvider());
+        Provider prov[] = Security.getProviders();
+
+        CryptoManager cm = new CryptoManager();
+        Service s = cm.newInstance("DES");
+        Chiffrement c = (Chiffrement)s ;
+
+        ManipFichierCrypto mp = new ManipFichierCrypto();
+
+        Cle cleFichier= mp.ReadFileKey("CleDES");
+        System.out.println("cle" + cleFichier);
+        c.init(cleFichier);
+        String cipher = c.crypte(vInfos.get(1).toString()); //on crype le mode de paiement (CARTE,CASH...)
         
-        // envoie au serveur compta
+        /*****************************************HMAC DU MOYEN DE PAIEMENT **********************************************************/
+        s = cm.newInstance("BC"); // on obtient en fonction de TriumVirat, le chemin de la class (Crypto.Triumvirat)
+//        
+        //cle = cm.genereCle("BC"); // on obtient une clé classe CleCaesar
+//      
+        System.out.println("service = " + s);
+        //cle = service.generateKey(128);
+        Authentication authen;
+        authen = (Authentication) s ; 
+
+        Security.addProvider(new BouncyCastleProvider());
+
+        cleFichier= mp.ReadFileKey("CleHMAC");
+        System.out.println("CLE = " + cleFichier);
+        authen.init(cleFichier);
+        byte [] hmac = authen.AddAuth(cipher);
+ 
+  
+        
+        /*******************************AJOUT DONNEES DANS LE VECTEUR POUR ENVOIE VERS SERCO******************************************/
+        Vector BuyGoods = new Vector();
+        
+        BuyGoods.add(vInfos.get(0).toString()) ; // //numSerie
+        BuyGoods.add(cipher) ; // //mode de paiement crypté
+        BuyGoods.add(hmac) ; //mode de paiement crypté + HMAC
         
         RequestDISMAP req = new RequestDISMAP(BUY_GOODS_REQUEST_CO, BuyGoods);
         GSocketCo = new GestionSocket();
         guiApplication.TraceEvenements("serCo = " +FichierConfig.getProperty("serCo") );
         guiApplication.TraceEvenements("portCo = " +FichierConfig.getProperty("portCo") );
+        
+        
+        /*******************************CONNEXION VERS SERCO*************************************************************************/
         GSocketCo.ConnectServeur(FichierConfig.getProperty("serCo"), Integer.parseInt(FichierConfig.getProperty("portCo")));
         guiApplication.TraceEvenements("CONNEXION AU SERVEUR CO");
         GSocketCo.Send(req);
         System.out.println("Apres la requete");
         //Attente de reponse du serveur
+        
+        
+        /*******************************REPONSE DE SERCO*****************************************************************************/
         ResponseDISMAP repCo = (ResponseDISMAP) GSocketCo.Receive();
         ResponseDISMAP rep = new ResponseDISMAP();
         if(repCo.getCodeRetour() == YES)
@@ -392,6 +445,7 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
         {
             beanSql.traiteRequeteInsertClient(nomClient, adresse);
         }
+        idClient = beanSql.FindIdClientByName(nomClient);
         String ModeDePaiement = vInfos.get(3).toString();
         boolean bool = beanSql.traiteRequeteInsertFacture(numSerie, prix, idClient, 1,ModeDePaiement);
         String Facture ="FACTURE " +"\n" + "Nom du client =" + nomClient +"\n" + "Prix effectif=" + prix +"\n" +"Numéro de série appareil=" + numSerie +"\n" + "Adresse de facturation=" + adresse ;
@@ -461,44 +515,89 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
         
         //Récupération des informations
         Vector vInfos = (Vector) getChargeUtile();
-        
+        String moyenDePaiement = null;
         System.out.println("Connexion à la bd " );
         BeanBDAccessMySQL   beanSql = ConnectToBd();
-        String moyenDePaiement = vInfos.get(1).toString() ;
-        int numSerie=Integer.valueOf(vInfos.get(0).toString());
         
+        /***********************************     RECUPERATION CIPHER + HMAC      **********************************************/
+        int numSerie=Integer.valueOf(vInfos.get(0).toString());
+        String CiphermoyenDePaiement = vInfos.get(1).toString() ; // sous forme de cipher
+        byte[] hmac =(byte[]) vInfos.get(2);
+        
+        /***********************************     VERIFICATION DU HMAC     **********************************************/
+        
+        CryptoManager cm = new CryptoManager();
+        Service s = cm.newInstance("BC");
+ 
+        System.out.println("service = " + s);
+        //cle = service.generateKey(128);
+        Authentication authen;
+        authen = (Authentication) s ; 
+
+        Security.addProvider(new BouncyCastleProvider());
+        ManipFichierCrypto mp = new ManipFichierCrypto();
+        Cle cleFichier= mp.ReadFileKey("CleHMAC");
+        System.out.println("CLE = " + cleFichier);
+        authen.init(cleFichier);
+        boolean ok = authen.verifyAuth(CiphermoyenDePaiement, hmac);
+        
+        
+        /*************************************CHIFFRAGE DE LA REQUETE + LECTURE DE LA CLE DANS FICHIER*****************************/
         ResponseDISMAP rep = new ResponseDISMAP();
+        if (ok)
+        {
+             guiApplication.TraceEvenements("Intégrité vérifié et authentification réussie !!!! '" );
+        
+
+                cm = new CryptoManager();
+                s = cm.newInstance("DES");
+                Chiffrement c = (Chiffrement)s ;
+                cleFichier= mp.ReadFileKey("CleDES");
+                System.out.println("cle" + cleFichier);
+                c.init(cleFichier);
+                moyenDePaiement = c.decrypt(CiphermoyenDePaiement); //on crype le mode de paiement (CARTE,CASH...)
+                guiApplication.TraceEvenements("Moyen de paiement décrypté  = '" + moyenDePaiement);
+                /*****************************************HMAC DU MOYEN DE PAIEMENT **********************************************************/
+
 
                 
-        if ("CARTE".equals(moyenDePaiement) || "CASH".equals(moyenDePaiement))
-        {
-            boolean test = beanSql.UpdateAppareilEtatBG(2, numSerie); // 1 pour etatPaiement réservé
-            if(test)
-            {
-                guiApplication.TraceEvenements("Moyen de paiement '" + moyenDePaiement);
-                guiApplication.TraceEvenements("Update de  '" + vInfos.get(0) + "' done !");
-                rep.setCodeRetour(YES);
-                String message = "Paiement par " + moyenDePaiement +"accepté";
-                rep.setChargeUtile(message);
-            }
-            else
-                guiApplication.TraceEvenements("Update de  '" + vInfos.get(0) + "' failed !");
-            
-                rep.setCodeRetour(ALREADY_PAIED);
 
 
+                if ("CARTE".equals(moyenDePaiement) || "CASH".equals(moyenDePaiement))
+                {
+                    boolean test = beanSql.UpdateAppareilEtatBG(2, numSerie); // 1 pour etatPaiement réservé
+                    if(test)
+                    {
+                        guiApplication.TraceEvenements("Moyen de paiement '" + moyenDePaiement);
+                        guiApplication.TraceEvenements("Update de  '" + vInfos.get(0) + "' done !");
+                        rep.setCodeRetour(YES);
+                        String message = "Paiement par " + moyenDePaiement +"accepté";
+                        rep.setChargeUtile(message);
+                    }
+                    else 
+                    {
+                        guiApplication.TraceEvenements("Update de  '" + vInfos.get(0) + "' failed !");
+                        rep.setCodeRetour(ALREADY_PAIED);
+                    }
+
+
+                }
+                else
+                {
+                    guiApplication.TraceEvenements("Moyen de paiement '" + moyenDePaiement);
+                    rep.setCodeRetour(BAD_PAIEMENT);
+                    String message = "Paiement par " + moyenDePaiement +"refusé ";
+                    rep.setChargeUtile(message);
+                }
         }
         else
         {
-            guiApplication.TraceEvenements("Moyen de paiement '" + moyenDePaiement);
-            rep.setCodeRetour(BAD_PAIEMENT);
-            String message = "Paiement par " + moyenDePaiement +"refusé ";
-            rep.setChargeUtile(message);
+             rep.setCodeRetour(FAIL_AUTHENTICATION);
         }
-     
 
-        Socket.Send(rep);
-        guiApplication.TraceEvenements("Send Reponse to SerMv");
+                Socket.Send(rep);
+                guiApplication.TraceEvenements("Send Reponse to SerMv");
+                
     }
 
   
