@@ -245,9 +245,8 @@ public class RequestDISMAP implements IRequest, IDISMAP, Serializable{
         
         System.out.println("Connexion à la bd " );
         beanSql = ConnectToBd();
-        Integer hashpass = vInfos.get(1).toString().hashCode() ; 
         
-        int test = beanSql.traiteRequeteInsertLogin(vInfos.get(0).toString(),hashpass.toString());
+        int test = beanSql.traiteRequeteInsertLogin(vInfos.get(0).toString(),vInfos.get(1).toString());
    
         ResponseDISMAP rep = new ResponseDISMAP();
         if(test == 1)
@@ -344,7 +343,9 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
 {   
 
         Vector vInfos = (Vector) getChargeUtile();
-     
+        Vector vNumSeries = (Vector)vInfos.get(0);
+                
+
         /*************************************CHIFFRAGE DE LA REQUETE + LECTURE DE LA CLE DANS FICHIER*****************************/
         Security.addProvider(new BouncyCastleProvider());
         Provider prov[] = Security.getProviders();
@@ -382,7 +383,7 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
         /*******************************AJOUT DONNEES DANS LE VECTEUR POUR ENVOIE VERS SERCO******************************************/
         Vector BuyGoods = new Vector();
         
-        BuyGoods.add(vInfos.get(0).toString()) ; // //numSerie
+        //BuyGoods.add(vInfos.get(0).toString()) ; // //numSerie
         BuyGoods.add(cipher) ; // //mode de paiement crypté
         BuyGoods.add(hmac) ; //mode de paiement crypté + HMAC
         
@@ -403,18 +404,31 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
         /*******************************REPONSE DE SERCO*****************************************************************************/
         ResponseDISMAP repCo = (ResponseDISMAP) GSocketCo.Receive();
         ResponseDISMAP rep = new ResponseDISMAP();
+        BeanBDAccessMySQL   beanSql;
+        beanSql = ConnectToBd();
         if(repCo.getCodeRetour() == YES)
         {
-            guiApplication.TraceEvenements("BUYGOODS avec  '" + vInfos.get(0) + "par " + vInfos.get(1).toString() + " done !");
+         for(int k=0 ; k< vNumSeries.size(); k++)
+         {
+             boolean test = beanSql.UpdateAppareilEtatBG(2, (int)vNumSeries.get(k)); // 1 pour etatPaiement réservé
+            if(test)
+            {
+                guiApplication.TraceEvenements("Update de  '" + vNumSeries.get(k) + "' failed !");
+                rep.setCodeRetour(YES);
+                
+            }
+            else 
+            {
+                guiApplication.TraceEvenements("Update de  '" + vNumSeries.get(k) + "' failed !");
+                rep.setCodeRetour(ALREADY_PAIED);
+                Socket.Send(rep);
+            }
+         }
+            
             rep.setCodeRetour(YES);
         
         }
-        else if(repCo.getCodeRetour() == ALREADY_PAIED)
-        {
-            guiApplication.TraceEvenements("Vous avez déjà payé !");
-            rep.setCodeRetour(ALREADY_PAIED);
         
-        }
          else if(repCo.getCodeRetour() == BAD_PAIEMENT)
         {
             guiApplication.TraceEvenements("Mauvaise méthode de paiement !");
@@ -434,36 +448,51 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
         
         System.out.println("Connexion à la bd " );
         beanSql = ConnectToBd();
-        
-        int numSerie=(int)vInfos.get(1);
+        Vector numSeries = (Vector)vInfos.get(1);
         String adresse = vInfos.get(2).toString();
         String nomClient = vInfos.get(3).toString();
-        float prix = beanSql.findFinalPriceBySerialNum(numSerie);
+        float prix =0;
+        
         
         int idClient = beanSql.FindIdClientByName(nomClient);
-        if(idClient ==0) // si client n'existe pas alors on le cree
+        
+        // SI LE CLIENT N'EXISTE PAS, ON LE CREE
+        if(idClient ==0) 
         {
             beanSql.traiteRequeteInsertClient(nomClient, adresse);
         }
         idClient = beanSql.FindIdClientByName(nomClient);
         String ModeDePaiement = vInfos.get(4).toString();
-        boolean bool = beanSql.traiteRequeteInsertFacture(numSerie, prix, idClient, 1,ModeDePaiement);
-        String Facture ="FACTURE " +"\n" + "Nom du client =" + nomClient +"\n" + "Prix effectif=" + prix +"\n" +"Numéro de série appareil=" + numSerie +"\n" + "Adresse de facturation=" + adresse ;
+        
+        
+        // CALCULER LE PRIX TOTAL
+        boolean bool=false;
         ResponseDISMAP rep = new ResponseDISMAP();
-        if(bool)
+        // INSERTION "DES" FACTURES (Mais le client n'en recoit qu'une groupée
+        for(int i =0 ; i<numSeries.size() ;i++)
         {
-           
-                guiApplication.TraceEvenements("insert de Facture réussie !");
-                rep.setCodeRetour(YES);
-                Vector vRep = new Vector();
-                vRep.add(Facture);
-                rep.setChargeUtile(vRep);
+            prix = prix + beanSql.findFinalPriceBySerialNum((int)numSeries.get(i));
+            bool=beanSql.traiteRequeteInsertFacture((int)numSeries.get(i), prix, idClient, 1,ModeDePaiement);
+            if(!bool)
+            {
+                 guiApplication.TraceEvenements("Impossible insertion facture !");
+                 rep.setCodeRetour(NO);
+                 Socket.Send(rep);
+            }
+            else
+                 guiApplication.TraceEvenements("insert de Facture réussie !");
+            
         }
-        else
-        {
-            guiApplication.TraceEvenements("Impossible insertion facture !");
-            rep.setCodeRetour(NO);
-        }
+   
+        
+        String Facture ="FACTURE " +"\n" + "Nom du client =" + nomClient +"\n" + "Prix effectif=" + prix +"\n" +"Numéro de série appareil=" + numSeries +"\n" + "Adresse de facturation=" + adresse ;
+ 
+        guiApplication.TraceEvenements("Facture client générée!");
+        rep.setCodeRetour(YES);
+        Vector vRep = new Vector();
+        vRep.add(Facture);
+        rep.setChargeUtile(vRep);
+      
         
         
         //Déconnexion de la BD
@@ -520,9 +549,9 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
         BeanBDAccessMySQL   beanSql = ConnectToBd();
         
         /***********************************     RECUPERATION CIPHER + HMAC      **********************************************/
-        int numSerie=Integer.valueOf(vInfos.get(0).toString());
-        String CiphermoyenDePaiement = vInfos.get(1).toString() ; // sous forme de cipher
-        byte[] hmac =(byte[]) vInfos.get(2);
+     
+        String CiphermoyenDePaiement = vInfos.get(0).toString() ; // sous forme de cipher
+        byte[] hmac =(byte[]) vInfos.get(1);
         
         /***********************************     VERIFICATION DU HMAC     **********************************************/
         
@@ -565,20 +594,14 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
 
                 if ("CARTE".equals(moyenDePaiement) || "CASH".equals(moyenDePaiement))
                 {
-                    boolean test = beanSql.UpdateAppareilEtatBG(2, numSerie); // 1 pour etatPaiement réservé
-                    if(test)
-                    {
+
+
                         guiApplication.TraceEvenements("Moyen de paiement '" + moyenDePaiement);
-                        guiApplication.TraceEvenements("Update de  '" + vInfos.get(0) + "' done !");
                         rep.setCodeRetour(YES);
                         String message = "Paiement par " + moyenDePaiement +"accepté";
                         rep.setChargeUtile(message);
-                    }
-                    else 
-                    {
-                        guiApplication.TraceEvenements("Update de  '" + vInfos.get(0) + "' failed !");
-                        rep.setCodeRetour(ALREADY_PAIED);
-                    }
+                    
+                   
 
 
                 }
