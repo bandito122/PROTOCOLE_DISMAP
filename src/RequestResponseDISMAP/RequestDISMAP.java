@@ -446,7 +446,7 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
             beanSql.traiteRequeteInsertClient(nomClient, adresse);
         }
         idClient = beanSql.FindIdClientByName(nomClient);
-        String ModeDePaiement = vInfos.get(3).toString();
+        String ModeDePaiement = vInfos.get(4).toString();
         boolean bool = beanSql.traiteRequeteInsertFacture(numSerie, prix, idClient, 1,ModeDePaiement);
         String Facture ="FACTURE " +"\n" + "Nom du client =" + nomClient +"\n" + "Prix effectif=" + prix +"\n" +"Numéro de série appareil=" + numSerie +"\n" + "Adresse de facturation=" + adresse ;
         ResponseDISMAP rep = new ResponseDISMAP();
