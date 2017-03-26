@@ -10,7 +10,8 @@ import javax.crypto.SecretKey;
  *
  * @author Bob
  */
-public interface ISocket {
+public interface ISocket 
+{
     
     public void ConnectServeur(String machine, int port);
     public void Send(Object req);       

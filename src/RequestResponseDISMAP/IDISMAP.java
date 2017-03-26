@@ -8,7 +8,8 @@ package RequestResponseDISMAP;
  *
  * @author bobmastrolilli
  */
-public interface IDISMAP{
+public interface IDISMAP
+{
     
     
     public static int LOGIN_REQUEST = 1;
@@ -28,5 +29,8 @@ public interface IDISMAP{
     public static int ACK = 21;
     public static int FAIL = 22;
     public static int CRYPTAGE = 100;
-
+    public static int GRAPH_OPERATION = 101;
+    public static int HISTOGRAMME = 102;
+    public static int SECTORIEL = 103;
+    public static int LINEAIRE = 104 ; 
 }

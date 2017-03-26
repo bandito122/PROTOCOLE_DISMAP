@@ -17,8 +17,8 @@ import static RequestResponseDISMAP.IDISMAP.LOGOUT;
 import static RequestResponseDISMAP.IDISMAP.NO;
 import static RequestResponseDISMAP.IDISMAP.USER_INSERT_REQUEST;
 import static RequestResponseDISMAP.IDISMAP.YES;
-import UtilsCrypto.ByteArrayList;
-import UtilsCrypto.ManipFichierCrypto;
+import Utils.ByteArrayList;
+import Utils.ManipFichierCrypto;
 import UtilsDISMAP.FichierConfig;
 import beans.BeanBDAccessMySQL;
 import beans.ConnectionOptions;
@@ -172,7 +172,7 @@ public class RequestDISMAP implements IRequest, IDISMAP, Serializable{
             } catch (Exception ex) {
                 Logger.getLogger(RequestDISMAP.class.getName()).log(Level.SEVERE, null, ex);
             }
-            return true;
+            return false;
         }
 
         else if (getType() == LOGOUT)
@@ -181,6 +181,17 @@ public class RequestDISMAP implements IRequest, IDISMAP, Serializable{
             traiteRequeteLogout(Socket, guiApplication);
             return true;
         }
+        else if (getType() == GRAPH_OPERATION)
+        {
+            guiApplication.TraceEvenements("Réception d'une requête GRAPH");
+            try {
+                traiteRequeteGraph(Socket, guiApplication);
+            } catch (Exception ex) {
+                Logger.getLogger(RequestDISMAP.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            return false;
+        }
+        
    
  
         return false;
@@ -414,7 +425,6 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
             if(test)
             {
                 guiApplication.TraceEvenements("Update de  '" + vNumSeries.get(k) + "' failed !");
-                rep.setCodeRetour(YES);
                 
             }
             else 
@@ -621,6 +631,95 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
                 Socket.Send(rep);
                 guiApplication.TraceEvenements("Send Reponse to SerMv");
                 
+    }
+    public void traiteRequeteGraph(ISocket Socket, ConsoleServeur guiApplication) throws Exception
+    {   
+        
+//        //Sectoriel (pie chart) : Nombre d’article vendu par marques
+//      
+//
+
+//
+//Linéaire : Chiffre d’affaire par mois (rajouter le prix des articles)
+//
+//
+//Prendre des échantillons 
+        System.out.println("YOOOO");
+        BeanBDAccessMySQL   beanSql;
+        ResponseDISMAP rep = new ResponseDISMAP();
+        //Récupération des informations
+        Vector vInfos = (Vector) getChargeUtile();
+        beanSql = ConnectToBd();
+        Vector  b = new Vector ();
+        System.out.println("Aprés connexion BD");
+        
+        //si c'est le sectoriel alors on renvoie un vecteur avec le nom suivi du nombre d'appareil
+        Vector res = new Vector();
+        String table = vInfos.get(0).toString();
+        String NomGraphique = vInfos.get(1).toString();
+        System.out.println("vInfos = " + vInfos);
+        switch (NomGraphique)
+        {
+            case "HISTOGRAMME": //Histogramme : Nombre d’article vendus par mois
+                
+                                // Récupérer le vecteur (month - prix)
+                                Vector ChiffreAffaireParMois = new Vector();
+                                ChiffreAffaireParMois = beanSql.getChiffreAffaireByMonth();
+                                res = ChiffreAffaireParMois;
+                                break;
+            case "SECTORIEL":
+                                // Récuperer type de tous les appareils
+                                Vector distinctAppareil = new Vector();
+                                distinctAppareil = beanSql.getDistinctTypePrecisAppareil();
+
+                                // Récupérer toutes les marques vendues
+                                Vector distinctMarque = new Vector();
+                                distinctMarque = beanSql.getListFournisseurs();
+
+                                for(int i=0;i<distinctMarque.size();i++)
+                                {
+                                    //Pour chaque appareil, rechercher le nombre
+                                    res.add(distinctMarque.get(i).toString()); // nom 
+                                    res.add(beanSql.CountSalesByProvider(distinctMarque.get(i).toString())); // nombre
+                                }
+                                break;
+            case "LINEAIRE":
+                                // Récupérer le vecteur (month - prix)
+                                Vector ChiffreAffaireParMois2 = new Vector();
+                                ChiffreAffaireParMois2 = beanSql.getChiffreAffaireByMonth();
+                                res = ChiffreAffaireParMois2;
+                                break;
+                
+        }
+        
+        
+//        for(int i=0;i<distinctAppareil.size();i++)
+//        {
+//            //Pour chaque appareil, rechercher le nombre
+//            res.add(distinctAppareil.get(i).toString()); // nom 
+//            res.add(beanSql.findCountAppareil(distinctAppareil.get(i).toString())); // nombre
+//        }
+//            
+//        
+        if(res.size()>0)
+        {
+            System.out.println("liste = " + res );
+            rep.setCodeRetour(YES);
+            rep.setChargeUtile(res);
+            System.out.println("Quelque chose à envoyer");
+        }
+        else
+        {
+            rep.setCodeRetour(NO);
+            System.out.println("Vide");
+        }
+        
+        guiApplication.TraceEvenements("Envoie du listring réussie dans la BD");
+        
+
+        
+        Socket.Send(rep);
+    
     }
 
   
