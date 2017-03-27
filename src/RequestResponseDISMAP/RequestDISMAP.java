@@ -657,38 +657,73 @@ public void traiteRequeteBGR(ISocket Socket, ConsoleServeur guiApplication) thro
         Vector res = new Vector();
         String table = vInfos.get(0).toString();
         String NomGraphique = vInfos.get(1).toString();
+        int echantillon = (int) vInfos.get(2);
         System.out.println("vInfos = " + vInfos);
         switch (NomGraphique)
         {
-            case "HISTOGRAMME": //Histogramme : Nombre d’article vendus par mois
-                
-                                // Récupérer le vecteur (month - prix)
-                                Vector ChiffreAffaireParMois = new Vector();
-                                ChiffreAffaireParMois = beanSql.getChiffreAffaireByMonth();
-                                res = ChiffreAffaireParMois;
+            case "HISTOGRAMME": 
+                                if("APPAREILS".equals(table))
+                                {
+                                    //Histogramme : Nombre d’article vendus par mois
+                                    // Récupérer le vecteur (month - prix)
+                                    Vector ChiffreAffaireParMois = new Vector();
+                                    ChiffreAffaireParMois = beanSql.getChiffreAffaireByMonth();
+                                    res = ChiffreAffaireParMois;
+                                }
+                                else if("PERSONNEL".equals(table))
+                                {
+                                    System.out.println("le serveur va générer les données pour la table personnel...");
+                                    //Histogramme : Age du personnel par classe d'age
+                                    // Creer une vue de N echantillons spécifiant les ages des personnes (de N echantillons)
+                                    beanSql.CreateViewFromAgePersonnel(echantillon);
+                                    // Il y a 4 catégories d'ages (de 20 à 60) avec les counts différents
+                                    // exemple dans le vecteur on a un couple (catégorie d'age/nb) : (20-30/5) (30-40/4) // 
+                                    Vector AgeCategorie = beanSql.getAgeByCategorie();
+                                    res = AgeCategorie ;
+                                }
+
                                 break;
             case "SECTORIEL":
-                                // Récuperer type de tous les appareils
-                                Vector distinctAppareil = new Vector();
-                                distinctAppareil = beanSql.getDistinctTypePrecisAppareil();
-
-                                // Récupérer toutes les marques vendues
-                                Vector distinctMarque = new Vector();
-                                distinctMarque = beanSql.getListFournisseurs();
-
-                                for(int i=0;i<distinctMarque.size();i++)
+                                if("APPAREILS".equals(table))
                                 {
-                                    //Pour chaque appareil, rechercher le nombre
-                                    res.add(distinctMarque.get(i).toString()); // nom 
-                                    res.add(beanSql.CountSalesByProvider(distinctMarque.get(i).toString())); // nombre
+                                    // Récuperer type de tous les appareils
+                                    Vector distinctAppareil = new Vector();
+                                    distinctAppareil = beanSql.getDistinctTypePrecisAppareil();
+
+                                    // Récupérer toutes les marques vendues
+                                    Vector distinctMarque = new Vector();
+                                    distinctMarque = beanSql.getListFournisseurs();
+
+                                    for(int i=0;i<distinctMarque.size();i++)
+                                    {
+                                        //Pour chaque appareil, rechercher le nombre
+                                        res.add(distinctMarque.get(i).toString()); // nom 
+                                        // Preer une vue des appareils vendus par marque (de N echantillons)
+                                        beanSql.CreateViewFromSampleAppareilVendus(echantillon);
+                                        res.add(beanSql.CountSampleSalesByProvider(distinctMarque.get(i).toString())); // nombre
+                                    }
                                 }
+ 
                                 break;
             case "LINEAIRE":
-                                // Récupérer le vecteur (month - prix)
-                                Vector ChiffreAffaireParMois2 = new Vector();
-                                ChiffreAffaireParMois2 = beanSql.getChiffreAffaireByMonth();
-                                res = ChiffreAffaireParMois2;
+                                if("APPAREILS".equals(table))
+                                {
+                                    // Récupérer le vecteur (month - prix)
+                                    Vector ChiffreAffaireParMois2 = new Vector();
+                                    ChiffreAffaireParMois2 = beanSql.getChiffreAffaireByMonth();
+                                    res = ChiffreAffaireParMois2;
+                                }
                                 break;
+            case "NUAGE":
+                            if("PERSONNEL".equals(table))
+                            {
+                                
+                                Vector xiYi = new Vector();
+                                beanSql.CreateViewXIYIFromPersonnel(echantillon);
+                                xiYi = beanSql.getxiYiFromPersonnel();
+                                res = xiYi;
+                            }
+                            break;
                 
         }
         
